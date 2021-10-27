@@ -16,7 +16,7 @@ library(dplyr)
 ```
 #Read in data and inspect what it looks like 
 ```{r}
-data<-read.csv("./Imputs/Bx2_NotNorm.csv",header=FALSE)
+data<-read.csv("./Imputs/Complete_SMMART_BRCA.csv",header=FALSE)
 head(data)
 ```
 
@@ -45,20 +45,5 @@ names(data2) <- as.matrix(data2[1, ])
 data2 <- data2[-1, ]
 #you should remove the sample name from the CSV manually for consistancy
 write.csv(data2,"./Imputs/Cleaned_Complete_SMMART_BRCA.csv")
-```
-
-#-R-V fix
-```{r}
-names(data) <- as.matrix(data[1, ])
-data <- data[-1, ]
-colnames(data)[1] <- "Protein"
-
-data2<-data
-#Remove the tresh
-#NOTE
-#THIS GETS RID OF THE LAST 4 OF ALL COLUMNS 
-data2$Protein<-str_sub(data2$Protein,1,nchar(data2$Protein)-4)
-
-data2$Protein<-gsub("-", "", data2$Protein)
 ```
 

@@ -1,0 +1,321 @@
+---
+title: "RPPA Report - Patient XXX"
+author: OHSU Knight Cancer Institute
+output:
+  pdf_document: default
+  html_document:
+    theme: cerulean
+    highlight: haddock
+always_allow_html: yes
+header-includes:
+   \usepackage[fontsize=12pt]{scrextend}
+   \usepackage{lscape}
+   \newcommand{\blandscape}{\begin{landscape}}
+   \newcommand{\elandscape}{\end{landscape}}
+   \usepackage{booktabs}
+   \usepackage{float}
+   \usepackage{fancyhdr}
+   \pagestyle{fancy}
+   \fancyhead[CO,CE]{Particiapant X; RPPA Analysis; CONFIDENTIAL}
+   \fancyfoot[CE,CO]{\thepage}
+   \fancypagestyle{plain}{\pagestyle{fancy}}
+---
+
+------------------------------------------------------------------------------------------------------------
+```{r, echo=FALSE,message=FALSE}
+#packages and data read in 
+library(tidyverse)
+library(reactable)
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(here)
+library(kableExtra)
+knitr::opts_chunk$set(fig.pos = "H", out.extra = "")
+
+```
+```{r,echo=FALSE}
+#- \usepackage{fancyhdr}
+#- \pagestyle{fancy}
+#- \cfoot{CONFIDENTIAL RPPA REPORT PATIENT X}"
+#- \rfoot{\thepage}
+  #\fancyfoot[CO,CE]{Particiapant X; RPPA Analysis; CONFIDENTIAL}
+#\fancyfoot[LE,LO]{\thepage}
+
+
+```
+
+\begin{center}
+
+
+Prepared By: Nathan McMahon, Ph.D.
+
+Dr. Gordon Mills Laboratory
+
+```{r metadata, echo=FALSE}
+metadata <- read.csv("./Imputs/PatientMetaData.csv")
+knitr::kable(metadata, caption = "Patient Information", align = "c", booktabs = TRUE,col.names = NULL, vline = "|", linesep='',bottomrule="\\bottomrule") %>%
+  kable_styling(latex_options = c("striped"))
+#kable(metadata,booktabs = Tformat = "pdf")
+
+```
+\end{center}
+\newpage
+
+
+\center __Table of Contents__ \center
+
+***
+
+* Page 3: TCGA Comparison - Full Heat map
+
+* Page 4: SMMART Comparison - Full Heat map
+
+* Page 5: SMMART Comparison - 60 Most Variable Proteins
+
+* Page 6: Complete Biopsy Comparison
+
+* Page 7: Biopsy Comparison - 60 Most Variable Proteins
+
+* Page 8: SMMART Cohort Protein and Signaling Pathway Comparison
+
+* Page 9: TCGA Protein and Signaling Pathway  Comparison
+
+* Page 10: Pathway Score Predictor Values
+
+
+
+
+
+
+
+
+```{r, echo=FALSE}
+#You will need to change the files to the correct ones that you generated from the previous scripts 
+Pathway_Scores<-read.csv("./Outputs/Cleaned_Complete_SMMART_BRCA_pathway_score_data.csv")
+Missing_Proteins<-read.csv("./Outputs/Cleaned_Complete_SMMART_BRCA_missing_proteins.csv",header = FALSE)
+Missing_Samples<-read.csv("./Outputs/Cleaned_Complete_SMMART_BRCA_Missing_Sample_Totals.csv",header = FALSE)
+Not_Included<-read.csv("./Outputs/Cleaned_Complete_SMMART_BRCA_Scores_not_found.csv",header = FALSE)
+
+Pathway_key<-read.table("./Imputs/Pathway_Scores.txt")
+colnames(Pathway_key) <- Pathway_key[1,]
+Pathway_key <- Pathway_key[-1, ]
+
+
+# BEMS ID: 0000303145 (Bx1), 0000272962 (Bx2)
+# 
+# Cancer Type: Breast Cancer
+# 
+# Biopsy Site: Liver (Bx1)/Liver (Bx2)
+# 
+# Biopsy Date Bx1: 2019-02-20, Bx2: 2019-03-20
+# 
+# Bx1 Treatment Information: Post Ladiratuzumab/Pegfilgrastim (Ended 2019-01-14)
+# 
+# Bx2 Treatment Information: On Olaparib (Began 2019-02-25)
+
+```
+
+
+```{r, echo=FALSE}
+#**First Lets take a look at the pathway Scores**
+#reactable(Pathway_Scores)
+#reactable(Pathway_key)
+
+#kbl(Pathway_key, booktabs = T)
+```
+
+
+```{r, echo=FALSE}
+#**Now lets look at the the proteins that were dropped from the Pathways analysis**
+
+#reactable(Not_Included)
+```
+
+
+```{r, echo=FALSE}
+#lets remove the samples that are all present
+#**The following samples are missing**
+
+#Missing_Samples<-Missing_Samples%>%
+ # filter(V2!=0)%>%
+  #rename("Sample"="V1",
+   #      "Amount_Missing"="V2")
+#now show it 
+#reactable(Missing_Samples)
+```
+
+
+```{r, echo=FALSE}
+#lets remove the samples that are all present
+#**The Following Proteins are missing**
+#Missing_Proteins<-Missing_Proteins%>%
+  #filter(V2!=0)%>%
+  #rename("Protein"="V1",
+         #"Amount_Missing"="V2")
+#lets visualize it
+#reactable(Missing_Proteins)
+```
+
+
+
+
+```{r, echo=FALSE}
+#uncomment if you want to see the missing proteins from analysis
+#col<-ggplot(Missing_Proteins, aes(Protein,Amount_Missing,fill=Protein))+geom_col()+theme_classic()+ ggtitle("Missing Proteins By Amount Missing")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ theme(legend.position="none")
+
+#col
+```
+
+
+```{r, echo=FALSE}
+#This section is going to have to be used on a case by case basis bedpending on how many missing samples are present 
+#Missing_Proteins2<-Missing_Proteins%>%filter(Protein != "CASPASE3CLEAVED")
+#col2<-ggplot(Missing_Proteins2, aes(Protein,Amount_Missing,fill=Protein))+geom_col()+theme_classic()+ ggtitle("Missing Proteins By Amount Missing")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ theme(legend.position="none")
+
+#uncomment if you want to see missing proteins plot that excludes major outliers
+#col2
+```
+\newpage
+\blandscape
+
+```{r Heatmap1, echo=FALSE, fig.align="center",out.width = "100%", fig.cap="Patient XXX Bx1 and Bx2 clusters with LumA/LumB TCGA tumors"}
+
+knitr::include_graphics("./Outputs/TCGA_HM.png")
+```
+\elandscape
+
+\newpage
+
+\blandscape
+
+```{r Heatmap2, echo=FALSE, fig.align="center",out.width = "100%",fig.cap="SMMART Cohort Heatmap"}
+
+
+knitr::include_graphics("./Outputs/SMMARTAnno.png")
+
+```
+
+\elandscape
+\newpage
+
+```{r Heatmap3, echo=FALSE, fig.align="center",out.width = "100%",fig.cap="Lowest and Highest Proteins Compared to SMMART Samples"}
+
+
+knitr::include_graphics("./Outputs/SMMART60Anno.png")
+
+```
+\newpage
+\blandscape
+
+```{r Heatmap22, echo=FALSE, fig.align="center",out.width = "100%",fig.cap="Complete Biopsy Comparison"}
+
+
+knitr::include_graphics("./Outputs/rot_fullheat_b1_b2.jpg")
+
+```
+\elandscape
+\newpage
+```{r Heatma9, echo=FALSE, fig.align="center",out.width = "65%",fig.cap="Most Variable Protetins Between Biopsies"}
+
+
+knitr::include_graphics("./Outputs/heatmap_most_variable_b1_b2.jpg")
+
+```
+
+
+\newpage
+```{r DensityGraph1, echo=FALSE, fig.align="center",out.width = "100%", fig.cap="SMMART Cohort Protein and Signaling Density Plot Comparison"}
+
+# Density graphs
+
+
+#![](./Outputs/SMMART_histograms.jpeg) 
+knitr::include_graphics("./Outputs/SMART_histograms.jpeg")
+
+```
+
+\newpage
+```{r DensityGraph2, echo=FALSE, fig.align="center",out.width = "100%", fig.cap="TCGA Cohort Protein and Signaling Density Plot Comparison (Apoptosis Pathway Data Not Avilable)"}
+
+# Density graphs
+
+
+#![](./Outputs/SMMART_histograms.jpeg) 
+knitr::include_graphics("./Outputs/TCGA_histograms.jpeg")
+
+```
+
+
+
+```{r pathwaytable2, echo=FALSE, }
+#**First Lets take a look at the pathway Scores**
+#reactable(Pathway_Scores)
+#reactable(Pathway_key)
+# Pathway_key <- read.delim("./Imputs/Pathway_Scores.txt")
+# kable(Pathway_key, longtable = T, booktabs = T, caption = "Pathway Score Predictors") %>%
+  #kable_styling(latex_options = c("striped","repeat_header"),"HOLD_position")
+```
+\newpage
+```{r pathwaytable3, fig.pos = "H", echo=FALSE, }
+#**First Lets take a look at the pathway Scores**
+#reactable(Pathway_Scores)
+#reactable(Pathway_key)
+Pathway_key <- read.delim("./Imputs/Pathway_Scores.txt")
+kable(Pathway_key, longtable = T, booktabs = T, caption = "Pathway Score Predictors") %>%
+  kable_styling(latex_options = c("striped","repeat_header"))
+```
+
+```{r, echo=FALSE}
+#Heatmap Options
+
+#![](./Outputs/heatmap_full_b1_b2.jpg)
+
+#![](./Outputs/heatmap_full_b1.jpg)
+
+#![](./Outputs/heatmap_full_b2.jpg)
+
+#![](./Outputs/heatmap_most_variable_b1_b2.jpg)
+
+#![](./Outputs/heatmap_most_variable_b1.jpg)
+
+#![](./Outputs/heatmap_most_variable_b2.jpg)
+
+# \newpage
+# \elandscape
+# 
+# \newpage
+# \blandscape
+# 
+# ![](./Outputs/rot_most_variable_heat_b2.jpg)
+# 
+# \newpage
+# \elandscape
+# 
+# \newpage
+# \blandscape
+# # Sample compared to TCGA Heatmap
+# 
+# ![](./Outputs/rot_big_TCGA.png)
+# 
+# ![](./Outputs/TCGA_histograms.jpeg)
+# 
+# \blandscape
+# ![](./Outputs/rot_fullheat_b2.jpg)
+```
+
+
+
+
+
+```{r, echo=FALSE}
+#move this outside of code chunk if you want full SMMART cohort comparison
+
+
+# Sample compared to SMMART samples
+
+#![](./Outputs/rot_big_Smmart.png)
+```
+
+
+

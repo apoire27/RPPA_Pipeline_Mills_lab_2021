@@ -1,0 +1,241 @@
+---
+title: "patway_prepare"
+author: "Alfonso Poire"
+date: "6/4/2021"
+output: html_document
+---
+This script will take in a pathway score file and out_put a format that can be passed up to the RPPA Report generator script
+
+Is this suppose to be the one from before I think it is 
+
+Packages
+```{r setup,echo=FALSE}
+library(tidyverse)
+library(dplyr)
+library(stringr)
+library(grid)
+```
+
+data read in 
+Change the data pathways to the file your using 
+```{r,echo=FALSE,message=FALSE}
+data<-read.csv("Outputs/Cleaned_Complete_SMMART_BRCA_pathway_score_data.csv",header=TRUE)
+data<-as.data.frame(t(data))
+names(data) <- data[1, ]
+data <- data[-1, ]
+data[is.na(data)] <- 0
+#Rename the first column so that we can manipulate it more easily
+colnames(data)[1]<-"Sample"
+TCGA_Key<-read_tsv("Imputs/TCGASubtype.20170308.tsv")
+```
+
+now lets split the Data Set into 2 separate categories the TCGA data and the patients 
+lets clan the names before we do anything else 
+```{r}
+#This will get rid of the Score part we could also change it to Pathway* and that would get rid of everything but the name
+for (col in 1:ncol(data)){
+  colnames(data)[col]<-sub("_Pathway_Score*", "", colnames(data)[col])
+}
+
+```
+
+```{r}
+patients<-data%>%filter(!grepl("TCGA-*",Sample))
+TCGA<-data%>%filter(grepl("TCGA-*",Sample))
+```
+
+now we can add out categorization column to the patient Data Set 
+```{r}
+patients<-cbind(Subtype="SMMART",patients)
+#Reorder for readability 
+patients<-patients%>%relocate(Sample,Subtype)
+patients$Sample<-as.numeric(patients$Sample)
+patients$Sample<-as.character(patients$Sample)
+```
+
+Now we need to find the  for all of out TCGA Data
+```{r}
+#first we need to do a bit of data manipulation to get this ready for query so we will make a bunch of hold columns that we will later delete 
+TCGA<-TCGA%>% separate(Sample,sep="-",into=c("hold1","hold2","hold3","hold4","hold5"),extra="merge",remove=FALSE)
+TCGA$hold4 <- gsub('.{1}$', '',TCGA$hold4)
+#we are naming this column sampleD so that we can match it to the key set later
+TCGA$sampleID<-paste(TCGA$hold1,TCGA$hold2,TCGA$hold3,TCGA$hold4,sep="-")
+#now lets do a quick reorder before we drop stuff 
+TCGA<-TCGA%>%relocate(Sample,sampleID)%>%select(-hold1,-hold2,-hold3,-hold4,-hold5)
+head(TCGA)
+#We will also create a query column outside the Data Set so we can query our other data with a single column
+query<-TCGA%>%select(sampleID)
+```
+
+Now we are ready to use our query set to get the samples we need 
+```{r}
+query_results<-merge(query,TCGA_Key,by="sampleID",all.x = TRUE)
+#now drop all the things we don't need
+query_results<-query_results%>%select(sampleID,Subtype_mRNA)
+#now we can add this back to our TCGA Data
+TCGA<-merge(TCGA,query_results,by="sampleID")
+#Now reorder the columns so we can have a better looking set
+TCGA<-TCGA%>%relocate(Sample,sampleID,Subtype_mRNA)
+
+```
+lets also pull out the matches that we did not find 
+```{r}
+TCGA_Missing<-TCGA[is.na(TCGA$Subtype_mRNA),]
+head(TCGA_Missing)
+#now we will drop the nas from our TCGA set
+TCGA<-TCGA%>%drop_na()
+```
+
+#now if we want we can select a secific patitent if we would like to from our patient data set heres where we do it 
+```{r}
+#Print out the available samples
+unique(patients$Sample)
+```
+
+
+
+#FILL THIS LIST WITH THE SAMPLES YOU WISH TO SELECT
+```{r}
+choices<-c("303010","303164")
+
+selected_patient<-patients%>%filter(Sample %in% choices)
+```
+#We can add a density map for that patient here
+```{r}
+long_data<-selected_patient%>%pivot_longer(cols=-(1:2),names_to = "Pathway")
+line_data<-long_data %>%select(-Subtype)%>%filter(Pathway!="Pathway")
+line_data$value<-as.numeric(line_data$value)
+
+line_data_Bxrename = line_data
+line_data_Bxrename[line_data_Bxrename=="303010"] <- "Bx1"
+line_data_Bxrename[line_data_Bxrename=="303164"] <- "Bx2"
+```
+
+#First lets get the TCGA Graphs made
+```{r}
+TCGA_Graph_Data<-TCGA%>%select(-Sample,-sampleID,-Pathway)
+#rotate it longer
+#pivot longer
+TCGA_long_data<-pivot_longer(TCGA_Graph_Data,cols=-(1),names_to = "Pathway")
+TCGA_long_data$value<-as.numeric(TCGA_long_data$value)
+
+```
+```{r}
+#We want to remove something choose it here
+#the only note here is that once removed the whole file must be run again to replace
+# "Her2"   "LumA"   "LumB"   "Basal"  "Normal"
+#TCGA_long_data<-TCGA_long_data%>%filter(Subtype_mRNA!="Her2")
+#TCGA_long_data<-TCGA_long_data%>%filter(Subtype_mRNA!="LumA")
+#TCGA_long_data<-TCGA_long_data%>%filter(Subtype_mRNA!="LumB")
+#TCGA_long_data<-TCGA_long_data%>%filter(Subtype_mRNA!="Basal")
+TCGA_long_data<-TCGA_long_data%>%filter(Subtype_mRNA!="Normal")
+```
+```{r}
+#IF you want to change the colors for the samples change this section
+vars=c('Her2'='purple','LumA'='Green','LumB'='Blue','Basal'='orange','Normal'='red')
+```
+
+```{r}
+#Not ure why the legend isent showing up 
+TCGA_histograms <- ggplot(TCGA_long_data, aes(value,group=Subtype_mRNA,fill=Subtype_mRNA)) +
+  #Change
+  geom_density(adjust=1.5, alpha=.4)+
+  theme_minimal()+
+  #THis part needs to be eddited to the patient of interest
+  ggtitle("Density Maps for TCGA Tumors, Patient XXX Highlighted")+
+  xlab('Value')+ylab('density') + 
+  facet_wrap(~Pathway)+  
+  geom_vline(data =line_data_Bxrename, aes(xintercept = value,color=Sample),size = 3, alpha=.4)
+
+TCGA_histograms<-TCGA_histograms+
+  theme(strip.text.x = element_text(size=30),plot.title = element_text(size=70))+
+  theme(axis.text=element_text(size=30),axis.title=element_text(size=40,face="bold"))+
+  #scale_color_manual(name = 'Subtype mRNA',values=vars)+
+  theme(legend.text=element_text(size=30),legend.title =element_text(size=40))
+
+ggsave("./Outputs/TCGA_histograms.jpeg",TCGA_histograms,width=40,height=40)
+```
+
+```{r}
+#Uncomment this if you want to save each graph individually
+
+plot_list = list()
+loop.list <- unique(TCGA_long_data$Pathway)
+for (i in seq_along(loop.list)) {
+  title_name=paste(i)
+  lines_hold<-line_data_Bxrename%>%filter(Pathway==loop.list[i])
+  p = ggplot(TCGA_long_data[TCGA_long_data$Pathway == loop.list[i], ],
+             aes(value,group=Subtype_mRNA,fill=Subtype_mRNA)) +
+    geom_density(adjust=1.5, alpha=.4)+
+    theme_minimal()+
+    ggtitle(loop.list[i])+
+    theme(plot.title = element_text(hjust = 0.5))+
+    #theme(axis.text=element_text(size=30),axis.title=element_text(size=40,face="bold"))+ if you want to change the size of the title or the axis titles   uncomment this 
+  # theme(legend.text=element_text(size=30),legend.title =element_text(size=40))+
+    xlab('Value')+ylab('density') +
+    geom_vline(data =lines_hold, aes(xintercept = value,color=Sample),size = 2)#if the lines are stacked on top of  add this , alpha=.4
+
+  plot_list[[i]] <- ggplotGrob(p)
+}
+#seq_along(loop.list)
+for (i in seq_along(loop.list)) {
+  file_name = paste("./Outputs/Density_plot_",loop.list[i], ".jpeg", sep="")
+  tiff(file_name)
+  grid.draw(plot_list[[i]])
+  dev.off()
+}
+```
+
+#Lets try and do smart
+```{r}
+patients<-patients%>%select(-Subtype,-Pathway)
+
+
+patients_graph_data<-pivot_longer(patients,cols=-(1),names_to = "Pathway")
+patients_graph_data$value<-as.numeric(patients_graph_data$value)
+```
+
+
+
+```{r}
+SMART_histograms <- ggplot(patients_graph_data, aes(value)) +
+  geom_density(fill="turquoise",adjust=1.5, alpha=.4) + 
+  #theme(legend.position = "none")+
+  theme_minimal()+
+  facet_wrap(~ Pathway)+
+  ggtitle("Density Maps for SMMART Tumors, Patient XXX Highlighted")+
+  geom_vline(data =line_data_Bxrename, aes(xintercept = value,color=Sample), size = 3)
+
+SMART_histograms<-SMART_histograms+
+  theme(strip.text.x = element_text(size=30),plot.title = element_text(size=70))+
+  theme(axis.text=element_text(size=30),axis.title=element_text(size=50,face="bold"))+
+  theme(legend.text=element_text(size=30),legend.title =element_text(size=40))
+
+ggsave("./Outputs/SMART_histograms.jpeg",SMART_histograms,width=40,height=40)
+```
+```{r}
+# # this if you want to save each graph individually
+# 
+# plot_list = list()
+# loop.list <- unique(patients_graph_data$Pathway)
+# for (i in seq_along(loop.list)) {
+#   title_name=paste(i)
+#   lines_hold<-line_data%>%filter(Pathway==loop.list[i])
+#   p = ggplot(patients_graph_data[patients_graph_data$Pathway == loop.list[i], ], 
+#              aes(value)) +
+#     geom_density(fill="turquoise",adjust=1.5, alpha=.4)+
+#     ggtitle(loop.list[i])+
+#     geom_vline(data =lines_hold, aes(xintercept = value,color=Sample))
+#   
+#   plot_list[[i]] <- ggplotGrob(p)
+# }
+# 
+# for (i in seq_along(loop.list)) {
+#   file_name = paste("./Outputs/Density_plot_",loop.list[i], ".png", sep="")
+#   tiff(file_name)
+#   grid.draw(plot_list[[i]])
+#   dev.off()
+# }
+
+```
+

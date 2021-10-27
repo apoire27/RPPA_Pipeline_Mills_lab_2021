@@ -1,0 +1,444 @@
+---
+title: "Heat_Mapper"
+author: "Alfonso Poire"
+date: "6/24/2021"
+output: html_document
+---
+This script prepares the heatmaps generated in the RPPA report file and it takes in lvl 4 proteins and patient data. 
+
+#Package read in 
+```{r, messages=FALSE}
+library(tidyverse)
+library(dplyr)
+library(janitor)
+library(ComplexHeatmap)
+library(data.table)
+library(magick)
+```
+#Data Read in 
+```{r,message=False}
+data<-read.csv("./Imputs/Cleaned_Complete_SMMART_BRCA.csv",header=FALSE)
+#if the data is not in ling format we need to roate it to get the TCGA groups labled
+data_t<-as.data.frame(t(data))
+data<-data_t%>%row_to_names(row_number = 1)
+colnames(data)[1] <- c("rn")
+#read in out TCGA Key
+TCGA_Key<-read_tsv("Imputs/TCGASubtype.20170308.tsv")
+```
+Nowe we split out dataset based on the SMART vs TCGA criteria
+```{r}
+smart<-data%>%filter(!grepl("TCGA-*",rn))
+TCGA<-data%>%filter(grepl("TCGA-*",rn))
+
+```
+now we can add out catigotization column to the patient dataset 
+```{r}
+smart<-cbind(Subtype="SMMART",smart)
+#Reorder for readability 
+smart<-smart%>%relocate(rn,Subtype)
+#lets clean the first col 
+smart$rn<-as.numeric(smart$rn)
+smart$rn<-as.character(smart$rn)
+```
+
+Now we need to find the Subtypes for all of out TCGA Data
+```{r}
+#first thing we need to do is to replace any of the . in the name with - because that matches our key
+#TCGA<-TCGA %>% 
+  #mutate(rn = str_replace(rn, ".", "-"))
+#we need to do a bit of data manipulation to get this ready for query so we will make a bunch of hold columns that we will later delete 
+TCGA<-TCGA%>% separate(rn,sep="-",into=c("hold1","hold2","hold3","hold4","hold5"),extra="merge",remove=FALSE)
+TCGA$hold4 <- gsub('.{1}$', '',TCGA$hold4)
+#we are naming theis column sampleID so that we can match it to the key set later
+TCGA$sampleID<-paste(TCGA$hold1,TCGA$hold2,TCGA$hold3,TCGA$hold4,sep="-")
+#now lets do a quick reorder before we drop stuff 
+TCGA<-TCGA%>%relocate(rn,sampleID)%>%select(-hold1,-hold2,-hold3,-hold4,-hold5)
+head(TCGA)
+#We will also create a query column outside the dataset so we can query our other data wth a single column
+query<-TCGA%>%select(sampleID)
+```
+Now we are ready to use our query set to get the samples we need 
+```{r}
+query_results<-merge(query,TCGA_Key,by="sampleID",all.x = TRUE)
+#now drop all the things we dont need
+query_results<-query_results%>%select(sampleID,Subtype_mRNA)
+#now we can add this bak to our TCGA Data
+TCGA<-merge(TCGA,query_results,by="sampleID")
+#Now reorder the columns so we can have a better looking set
+TCGA<-TCGA%>%relocate(rn,sampleID,Subtype_mRNA)
+
+```
+
+lets also pull out the matches that we dident find 
+```{r}
+TCGA_Missing<-TCGA[is.na(TCGA$Subtype_mRNA),]
+head(TCGA_Missing)
+#now we will drop the nas from our TCGA set
+TCGA<-TCGA[!is.na(TCGA$Subtype_mRNA),]
+```
+Now we need to merge our sets together again
+```{r}
+#rename the subtype col and drop the extra col 
+TCGA<-TCGA%>%rename("Subtype"="Subtype_mRNA")
+TCGA<-TCGA[-(2)]
+
+full_data<-rbind(smart,TCGA)
+```
+
+
+First lets do the small subsample set
+if we want to change the proteins in the heatmap this is the section to do it to do this please edit the Proteins_for_heatmap file in the imput file and save it as Proteins_for_heatmap_copy.txt
+```{r}
+proteins<-read.csv("./Imputs/Proteins_for_heatmap_copy.txt")
+proteins<-c(proteins$rn)
+```
+
+
+```{r}
+#this is our error correction box where we will add any unruly names that need to be fixed
+full_dat<-full_data%>%rename("1433BETA"="X1433BETA","4EBP1"="X4EBP1","4EBP1_pS65"="X4EBP1_pS65","53BP1"="X53BP1")
+#data_hm<-full_data%>%select(rn,Subtype,proteins)
+data_hm<-full_data
+```
+Now enter your selections for the samples you want to use in this box for biopsy 1 and 2 
+```{r}
+b1<-"303010"
+b2<-"303164"
+```
+we need to do some manipulation before we can do our calculations 
+```{r}
+data_hm<-as.data.frame(t(data_hm))
+data_hm<-data_hm%>%row_to_names(row_number = 1)
+#select the rows we want and get rid of any nas in thoes rows before we z score 
+#make a function for this 
+completeFun <- function(data, desiredCols) {
+  completeVec <- complete.cases(data[, desiredCols])
+  return(data[completeVec, ])
+}
+
+#now we will feed it ithe cols we want and remove the nas
+data_hm<-completeFun(data_hm,c(b1,b2))
+#im going to get rid of the subtype here not sure if thats a good idea perhaps we could ad it back in later but it seems unnecessary 
+data_hm<-data_hm[-1,]
+```
+now we can z_score across
+```{r}
+data_hm[] <- lapply(data_hm, function(x) as.numeric(as.character(x)))
+z_score<-sapply(data_hm, function(data_hm) (data_hm-mean(data_hm))/sd(data_hm))
+rownames(z_score)<-rownames(data_hm)
+z_score<-as.data.frame(z_score)
+z_score<-z_score%>%select(all_of(b1),all_of(b2))
+```
+
+```{r}
+#Lests get our fold change in there to 
+z_score$fold_change<-z_score[b2]-z_score[b1]
+#Rename the fold change col to be just fold change no mumbers 
+colnames(z_score)[3] <- c("Fold_change")
+```
+
+Now lets make out heat maps 
+```{r}
+#first order the fold chnge to get a nice gradient 
+z_score<-z_score[order(z_score$Fold_change),]
+data_for_heatmap<-as.matrix(z_score)
+
+data_for_heatmap2 = data_for_heatmap
+colnames(data_for_heatmap) <- c("Bx1", "Bx2","Fold_change")
+#data_for_heatmap2[data_for_heatmap2=="303145"] <- "Bx1"
+#data_for_heatmap2[data_for_heatmap2=="272962"] <- "Bx2"
+
+
+#data_for_heatmap2 %>%
+  #rename(
+   # Bx1 = `3031451`,
+    #Bx2 = `272962`
+  #)
+```
+Full set
+```{r}
+jpeg("./Outputs/heatmap_full_b1_b2.jpg", width = 500, height = 5000)
+Heatmap(data_for_heatmap, 
+        cluster_rows = FALSE,
+        cluster_columns = FALSE, 
+        show_column_names = TRUE, 
+        show_row_names = TRUE,
+        name="x",
+        column_title = "Full Heatmap")
+dev.off()
+oldheatmap <-image_read("./Outputs/heatmap_full_b1_b2.jpg")
+image_rotate(oldheatmap, 90) %>% image_write("./Outputs/rot_fullheat_b1_b2.jpg")
+```
+Now we will take the top and bottom 30 only 
+```{r}
+top20<-z_score%>%slice_max(Fold_change,n=30)
+bottom20<-z_score%>%slice_min(Fold_change,n=30)
+bottom20<-bottom20%>%arrange(desc(bottom20$Fold_change))
+subset<-rbind(top20,bottom20)
+data_for_heatmap<-as.matrix(subset)
+
+colnames(data_for_heatmap) <- c("Bx1", "Bx2","Fold_change")
+```
+```{r}
+jpeg("./Outputs/heatmap_most_variable_b1_b2.jpg", width = 500, height = 1000)
+Heatmap(data_for_heatmap, 
+        cluster_rows = FALSE,
+        cluster_columns = FALSE, 
+        show_column_names = TRUE, 
+        show_row_names = TRUE,
+        name= "x",
+        column_title = "Most Variable Proteins",
+        column_title_gp = gpar(fontsize = 20, fontface = "bold"),
+        column_names_gp = gpar(fontsize = 18),
+        #col = circlize::colorRamp2(c(-10, 0, 10), c("turquoise", "white","maroon" ))
+        )
+dev.off()
+
+```
+#If you want single patient heatmaps run this part 
+seperate into individual patients 
+```{r}
+zscore_b1<-z_score%>%select(b1)
+data_for_heatmap_b1<-as.matrix(zscore_b1)
+zscore_b2<-z_score%>%select(b2)
+data_for_heatmap_b2<-as.matrix(zscore_b2)
+```
+
+Full set
+```{r}
+jpeg("./Outputs/heatmap_full_b1.jpg", width = 500, height = 5000)
+Heatmap(data_for_heatmap_b1, 
+        cluster_rows = TRUE,
+        cluster_columns = FALSE, 
+        show_column_names = TRUE, 
+        show_row_names = TRUE,
+        name="x",
+        column_title = "Bx 1 Heatmap")
+dev.off()
+oldheatmap <-image_read("./Outputs/heatmap_full_b1.jpg")
+image_rotate(oldheatmap, 90) %>% image_write("./Outputs/rot_fullheat_b1.jpg")
+
+jpeg("./Outputs/heatmap_full_b2.jpg", width = 500, height = 5000)
+Heatmap(data_for_heatmap_b2, 
+        cluster_rows = TRUE,
+        cluster_columns = FALSE, 
+        show_column_names = TRUE, 
+        show_row_names = TRUE,
+        name="x",
+        column_title = "Bx 2 Heatmap")
+dev.off()
+oldheatmap <-image_read("./Outputs/heatmap_full_b2.jpg")
+image_rotate(oldheatmap, 90) %>% image_write("./Outputs/rot_fullheat_b2.jpg")
+
+```
+Now we will take the top and bottom 30 only 
+```{r}
+top20<-z_score%>%slice_max(Fold_change,n=30)
+bottom20<-z_score%>%slice_min(Fold_change,n=30)
+bottom20<-bottom20%>%arrange(desc(bottom20$Fold_change))
+subset<-rbind(top20,bottom20)
+
+subset_b1<-subset%>% select(b1)
+subset_b1<-as.matrix(subset_b1)
+subset_b2<-subset%>% select(b2)
+subset_b2<-as.matrix(subset_b2)
+
+```
+```{r}
+jpeg("./Outputs/heatmap_most_variable_b1.jpg", width = 500, height = 1000)
+Heatmap(subset_b1,
+        cluster_rows = TRUE,
+        cluster_columns = FALSE, 
+        show_column_names = TRUE, 
+        show_row_names = TRUE,
+        name= "x",
+        column_title = "Bx 1 Most Variable",
+        column_title_gp = gpar(fontsize = 20, fontface = "bold"),
+        column_names_gp = gpar(fontsize = 18),
+        #col = circlize::colorRamp2(c(-10, 0, 10), c("turquoise", "white","maroon" ))
+        )
+dev.off
+oldheatmap <-image_read("./Outputs/heatmap_most_variable_b1.jpg")
+image_rotate(oldheatmap, 90) %>% image_write("./Outputs/rot_most_variable_b1.jpg")
+
+jpeg("./Outputs/heatmap_most_variable_b2.jpg", width = 500, height = 1000)
+Heatmap(subset_b2,
+        cluster_rows = TRUE,
+        cluster_columns = FALSE, 
+        show_column_names = TRUE, 
+        show_row_names = TRUE,
+        name= "x",
+        column_title = "Bx 2 Most Variable",
+        column_title_gp = gpar(fontsize = 20, fontface = "bold"),
+        column_names_gp = gpar(fontsize = 18),
+        #col = circlize::colorRamp2(c(-10, 0, 10), c("turquoise", "white","maroon" ))
+        )
+dev.off()
+oldheatmap <-image_read("./Outputs/heatmap_most_variable_b2.jpg")
+image_rotate(oldheatmap, 90) %>% image_write("./Outputs/rot_most_variable_b2.jpg")
+
+```
+
+#This section is currently not workig 
+#full set heat map 
+The reason this isent working is because i forgot to swap the values to numeric 
+
+
+we are going to add a column to denote our samples of intrest
+```{r}
+Bx1 = b1
+Bx2 = b2
+
+full_data<-full_data %>%mutate(ID = if_else(rn == b1,"Bx1", ifelse(rn==b2,"Bx2","SMMART")))
+full_data<-full_data[!is.na(full_data$rn),]
+```
+
+```{r}
+
+data_full_hm <- full_data[,-1]
+
+rownames(data_full_hm) <- full_data[,1]
+
+data_full_hm<-data_full_hm%>% arrange(Subtype)
+#Get rid of all rows containing more than 50% NA aVAlue this can be changed
+data_full_hm<-data_full_hm[, which(colMeans(!is.na(data_full_hm)) > 0.1)]
+```
+Seperate into SMART and TCGA cohorts
+```{r}
+Full_SMMART<-data_full_hm%>%filter(Subtype=="SMMART")
+Full_TCGA<-data_full_hm%>%filter(Subtype!="SMMART")
+```
+
+
+
+```{r}
+removeSamples<-Full_SMMART %>% #pull off the other annotation columns
+  select(-Subtype,-ID)
+removeSamples[] <- sapply(removeSamples, as.numeric)
+removeSamples<-removeSamples[, which(colMeans(!is.na(removeSamples)) > 0.1)]
+removeSamples<-removeSamples %>% mutate_if(is.numeric, funs(ifelse(is.na(.), 0, .)))
+
+#removeSamples<-removeSamples[, which(colMeans(!is.na(removeSamples)) > 0.1)]
+matrix_forHeatMap_SMMART<-as.matrix(removeSamples) #convert to matrix
+
+matrix_forHeatMap_SMMART<-t(matrix_forHeatMap_SMMART)
+
+#row annotation 
+#this set-up is specific for the ComplexHeatmap package
+
+row_ha = HeatmapAnnotation(sampleID = Full_SMMART$ID,col = list(bar = c("Bx1" = "red", "Bx2" = "green", "SMMART" = "Black")))
+```
+Lets sepera
+```{r}
+jpeg("./Outputs/big_Smmart.png", width =  2000, height = 3500)
+Heatmap(matrix_forHeatMap_SMMART, 
+        cluster_rows =TRUE,
+        cluster_columns = TRUE, 
+        show_column_names = FALSE, 
+        show_row_names = TRUE,
+        name= "DMSO adjusted Log2 value",
+        top_annotation = row_ha
+        )
+dev.off()
+oldheatmap_SMMARTbig <-image_read("./Outputs/big_Smmart.png")
+image_rotate(oldheatmap_SMMARTbig, 90) %>% image_write("./Outputs/rot_big_SMMART.png")
+```
+```{r}
+removeSamples<-Full_TCGA %>% #pull off the other annotation columns
+select(-Subtype,-ID)
+removeSamples[] <- sapply(removeSamples, as.numeric)
+removeSamples<-removeSamples[, which(colMeans(!is.na(removeSamples)) > 0.1)]
+removeSamples<-removeSamples %>% mutate_if(is.numeric, funs(ifelse(is.na(.), 0, .)))
+
+#removeSamples<-removeSamples[, which(colMeans(!is.na(removeSamples)) > 0.1)]
+matrix_forHeatMap_TCGA<-as.matrix(removeSamples) #convert to matrix
+
+matrix_forHeatMap_TCGA<-t(matrix_forHeatMap_TCGA)
+
+#row annotation 
+#this set-up is specific for the ComplexHeatmap package
+
+row_ha = HeatmapAnnotation(sampleID = Full_TCGA$ID,col = list(bar = c("Bx1" = "red", "Bx2" = "green", "SMMART" = "Black")))
+```
+Lets sepera
+```{r}
+jpeg("./Outputs/big_TCGA.png", width =  2000, height = 4500)
+Heatmap(matrix_forHeatMap_TCGA, 
+        cluster_rows =TRUE,
+        cluster_columns = TRUE, 
+        show_column_names = FALSE, 
+        show_row_names = TRUE,
+        name= "DMSO adjusted Log2 value",
+        top_annotation = row_ha,
+        )
+dev.off()
+oldheatmap_TCGAbig <-image_read("./Outputs/big_TCGA.png")
+image_rotate(oldheatmap_TCGAbig, 90) %>% image_write("./Outputs/rot_big_TCGA.png")
+```
+
+FUll heatmaps top 30 
+```{r}
+
+subset<-cbind(proteins = rownames(subset), subset)
+rownames(subset) <- 1:nrow(subset)
+```
+
+```{r}
+SMMART_60v<-as.data.frame(matrix_forHeatMap_SMMART)
+SMMART_60v <- cbind(proteins = rownames(SMMART_60v), SMMART_60v)
+rownames(SMMART_60v) <- 1:nrow(SMMART_60v)
+
+SMMART_60v<-SMMART_60v%>%filter(proteins %in% subset$proteins)
+hold <- SMMART_60v[-1]
+row.names(hold) <- SMMART_60v$proteins
+SMMART_60v<-hold
+
+SMMART_60v<-as.matrix(SMMART_60v)
+
+row_ha = HeatmapAnnotation(sampleID = Full_SMMART$ID,col = list(bar = c("b1" = "red", "SMMART" = "Black")))
+```
+```{r}
+jpeg("./Outputs/big_SMMART_60v.png", width =  2000, height = 1500)
+Heatmap(SMMART_60v, 
+        cluster_rows =TRUE,
+        cluster_columns = FALSE, 
+        show_column_names = FALSE, 
+        show_row_names = TRUE,
+        name= "DMSO adjusted Log2 value",
+        top_annotation = row_ha,
+        )
+dev.off()
+oldheatmap_SMMART60vbig <-image_read("./Outputs/big_SMMART_60v.png")
+image_rotate(oldheatmap_TCGAbig, 90) %>% image_write("./Outputs/rot_big_SMMART60v.png")
+```
+
+```{r}
+
+TCGA_60v<-as.data.frame(matrix_forHeatMap_TCGA)
+TCGA_60v<- cbind(proteins = rownames(TCGA_60v), TCGA_60v)
+rownames(TCGA_60v) <- 1:nrow(TCGA_60v)
+
+TCGA_60v<-TCGA_60v%>%filter(proteins %in% subset$proteins)
+hold <- TCGA_60v[-1]
+row.names(hold) <- TCGA_60v$proteins
+TCGA_60v<-hold
+
+TCGA_60v<-as.matrix(TCGA_60v)
+
+row_ha = HeatmapAnnotation(sampleID = Full_TCGA$ID,col = list(bar = c("b1" = "red", "b2" = "green", "SMMART" = "Black")))
+```
+
+```{r}
+jpeg("./Outputs/big_TCGA60v.png", width =  2000, height = 1500)
+Heatmap(TCGA_60v, 
+        cluster_rows =TRUE,
+        cluster_columns = TRUE, 
+        show_column_names = FALSE, 
+        show_row_names = TRUE,
+        name= "DMSO adjusted Log2 value",
+        top_annotation = row_ha,
+        )
+dev.off()
+oldheatmap_TCGA60vbig <-image_read("./Outputs/big_TCGA60v.png")
+image_rotate(oldheatmap_TCGAbig, 90) %>% image_write("./Outputs/rot_big_TCGA60v.png")
+```
