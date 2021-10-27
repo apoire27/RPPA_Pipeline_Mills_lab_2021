@@ -1,0 +1,143 @@
+---
+title: "RPPA_Report"
+author: "Alfonso Poire"
+date: "5/24/2021"
+output:
+  html_document:
+    theme: cerulean
+    highlight: haddock
+  pdf_document: default
+---
+This is a generated RPPA Report generated from the following scripts, 
+
+-Pathway_Score_calculator.ipynb
+- Score_Caluclator.Rmd (eventually this will be encorporated into the Pathway_Score_calculator.ipynb)
+-Pathway_Score_calculator.ipynb
+-Pathway_prepare_Density_maper.Rmd
+-Heat_mapper.Rmd
+-RPPA_Report.Rmd
+
+
+All Scripts must be run prior to running this script or it will not work,Knit this file together and a HTML report will be generated if you wish to change the format of this file you may alter HTML instructions.
+
+------------------------------------------------------------------------------------------------------------
+
+# This is the report file for Patient ______ 
+
+packages and data read in 
+```{r, echo=FALSE,message=FALSE}
+library(tidyverse)
+library(reactable)
+library(dplyr)
+library(kableExtra)
+```
+```{r, echo=FALSE}
+#You will need to change the files to the correct ones that you generated from the previous scripts 
+Pathway_Scores<-read.csv("./Outputs/SMMART_EBN_RBN_5_pathway_score_data.csv")
+Missing_Proteins<-read.csv("./Outputs/SMMART_EBN_RBN_5_missing_proteins.csv",header = FALSE)
+Missing_Samples<-read.csv("./Outputs/SMMART_EBN_RBN_5_Missing_Sample_Totals.csv",header = FALSE)
+Not_Included<-read.csv("./Outputs/SMMART_EBN_RBN_5_Scores_not_found.csv",header = FALSE)
+Missing_Proteins_Full<-read.csv("./Outputs/Score_pass_back.csv",header = FALSE)
+colnames(Missing_Proteins_Full) <- Missing_Proteins_Full[1,]
+Missing_Proteins_Full <- Missing_Proteins_Full[-1, ] 
+Pathway_key<-read.table("./Imputs/Pathway_Scores.txt")
+colnames(Pathway_key) <- Pathway_key[1,]
+Pathway_key <- Pathway_key[-1, ] 
+
+```
+
+**First Lets take a look at the pathway Scores**
+```{r, echo=FALSE}
+reactable(Pathway_Scores)
+```
+Lets look at the pathway scoring 
+```{r}
+
+kbl(Pathway_key, booktabs = T)
+
+
+```
+
+
+**Now lets look at the the proteins that were dropped from the Pathways analysis**
+```{r, echo=FALSE}
+reactable(Not_Included)
+```
+
+**The following samples are missing**
+```{r, echo=FALSE}
+#lets remove the samples that are all present
+Missing_Samples<-Missing_Samples%>%
+  filter(V2!=0)%>%
+  rename("Sample"="V1",
+         "Amount_Missing"="V2")
+#now show it 
+reactable(Missing_Samples)
+```
+#Our Sample Patient ______ is missing 
+```{r}
+#This part will need to be altered depending on our patient of intrest
+Missing_Sample_for_Our_patient<-Missing_Samples%>%filter(Sample=="261035")
+reactable(Missing_Sample_for_Our_patient)
+```
+
+Sepcifically it is missing the following proteins
+```{r}
+Missing_Proteins_Full<-Missing_Proteins_Full%>%select(Predictor,"261035")#THIS NEEDS TO BE ALTERED TO DISIRED SAMPLE OR SAMPLES
+
+proteins<-Missing_Proteins_Full[is.na(Missing_Proteins_Full$`261035`),]
+
+reactable(proteins)
+```
+
+
+
+**The Following Proteins are missing**
+```{r, echo=FALSE}
+#lets remove the samples that are all present 
+Missing_Proteins<-Missing_Proteins%>%
+  filter(V2!=0)%>%
+  rename("Protein"="V1",
+         "Amount_Missing"="V2")
+#lets visualize it
+reactable(Missing_Proteins)
+```
+
+**We can also visualize the missing proteins in histograms to make it more understandable**
+```{r, echo=FALSE}
+col<-ggplot(Missing_Proteins, aes(Protein,Amount_Missing,fill=Protein))+geom_col()+theme_classic()+ ggtitle("Missing Proteins By Amount Missing")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ theme(legend.position="none")
+
+col
+```
+#There was ____ Samples with a largen than normal missing amount of proteins these were removed and the graph was remade for visability purposes 
+```{r}
+#This section is going to have to be used on a case by case basis bedpending on how many missing samples are present 
+Missing_Proteins2<-Missing_Proteins%>%filter(Protein != "CASPASE3CLEAVED")
+col2<-ggplot(Missing_Proteins2, aes(Protein,Amount_Missing,fill=Protein))+geom_col()+theme_classic()+ ggtitle("Missing Proteins By Amount Missing")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+ theme(legend.position="none")
+
+col2
+```
+
+
+# Density graphs
+
+
+![](./Outputs/SMART_histograms.jpeg)
+![](./Outputs/TCGA_histograms.jpeg)
+#Heat Maps
+
+#![](./Outputs/heatmap_full_b1_b2.jpg)
+
+#![](./Outputs/heatmap_full_b1.jpg)
+
+#![](./Outputs/heatmap_full_b2.jpg)
+
+#![](./Outputs/heatmap_most_variable_b1_b2.jpg)
+
+#![](./Outputs/heatmap_most_variable_b1.jpg)
+
+#![](./Outputs/heatmap_most_variable_b2.jpg)
+
+#![](./Outputs/big_TCGA.png)
+
+#![](./Outpbig_Smmart.png.png)

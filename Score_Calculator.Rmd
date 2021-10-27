@@ -1,0 +1,65 @@
+---
+title: "Score_Calculator"
+author: "Alfonso Poire"
+date: "6/11/2021"
+output: html_document
+---
+THis script cleans and rotates the data from the Pathway_Score_calculator.ipynb file and is run half way through it then the rest of the other script must be run to complete pathway scoring 
+
+#We are going to take the output from the python file and nest it by the pathway and we will then do the removals we want to do 
+then we can put it out again 
+
+```{r,echo=False}
+library(tidyverse)
+library(dplyr)
+```
+
+Data read in 
+This data must be changed to the correct file that you are working with ex ______Score_pass.csv
+```{r}
+  data<-as.data.frame(t(read.csv("./Outputs/SMMART_EBN_RBN_5_score_pass.csv",header=FALSE)))
+pathways<-read.csv("./Imputs/Pathway_Scores.txt",sep="\t")
+```
+now set the header to the patient id renaming the rows is a waste of time 
+```{r}
+names(data)<-data[1,]
+data<-data[-1,]
+#we also need to rename the first column so we can merge on it 
+colnames(data)[1]<-c("Predictor")
+```
+Now lets prepare the pathways set
+```{r}
+#first lets get rid of the cols from pathway score we dont need 
+pathways<-pathways%>%select(-Weight,-Count)
+
+#lets clean the predictor column so it matches out format
+#ASK ABOUT BLC2
+pathways$Predictor<-str_replace_all(pathways$Predictor, "[^[:alnum:]]", "")
+pathways$Predictor<-toupper(pathways$Predictor)
+
+```
+
+now we are going to create a pathway column by using the pathway score as a dictionary 
+```{r}
+#now lets do the merge
+data<-merge(data,pathways,by="Predictor")
+write.csv(data,"./Outputs/Score_pass_back.csv",row.names=FALSE)
+```
+
+#Reformating section this needs to be somewhere better 
+```{r}
+# data<-read.csv("./Imputs/adj_soonyoung.csv")
+# 
+# data_test<-data %>% 
+#   group_by(Sample_description) %>% summarise_all(funs(mean(., na.rm = TRUE)))
+# 
+# data<-data_test%>%select(-X,-Cell_line,-Exparement,-Antibody_Name)
+# 
+# data<-t(data)
+# colnames(data) <- data[1,]
+# data<- data[-1, ]
+# data<- data[-1, ]
+# write.csv(data,"non_adj_soonyoung_score_ready.csv")
+```
+
+

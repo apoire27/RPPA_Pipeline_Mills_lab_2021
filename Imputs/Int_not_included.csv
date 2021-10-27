@@ -1,0 +1,6 @@
+Predictor,Pathway,Weight,Count
+H2AXPS139,DNA_Damage,1.0,1.0
+ATMPS1981,DNA_Damage_Checkpoint,1.0,1.0
+ECADHERIN,Tumor_Content,1.0,1.0
+HISTONEH3PS10,Histone_H3_pS10,1.0,1.0
+HLADQA1,HLA_DQA1,1.0,1.0

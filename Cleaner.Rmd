@@ -1,0 +1,64 @@
+---
+title: "Cleaner"
+author: "Alfonso Poire"
+date: "9/30/2021"
+output: html_document
+---
+This script acts as a cleaner for the data that we want to put in to the RPPA Pipeline 
+
+THIS FILE IS BY NO MEANS A FOOL PROFF CLEAN FOR ALL VARIATIONS YOU MUST CHECK YOUR DATA GOING IN AND OUT 
+
+We will need to add variations as differing data formats come in as it seems like there is not consistent standardization in naming 
+
+```{r}
+library(tidyverse)
+library(dplyr)
+```
+#Read in data and inspect what it looks like 
+```{r}
+data<-read.csv("./Imputs/Bx2_NotNorm.csv",header=FALSE)
+head(data)
+```
+
+
+#This Section is to fix data if the column names are in the fllowing format
+  -Gordon Mills (Dong Zhang)-261035 ect.
+```{r}
+data<-as.data.frame(t(data))
+names(data) <- as.matrix(data[1, ])
+data <- data[-1, ]
+colnames(data)[1] <- "Sample"
+
+#seperate out the TCGA Samples and the normal samples
+dataTCGA<-data%>%filter(grepl('TCGA', Sample))
+dataNoNTCGA<-data%>%filter(!grepl('TCGA', Sample))
+
+#Now lets fix the non tcga ones
+#THIS WiLL ALSO DROP DASHES
+dataNoNTCGA$Sample<-gsub("[^0-9.]", "", dataNoNTCGA$Sample)
+
+#Now we need to recombine 
+data2<-rbind(dataNoNTCGA,dataTCGA)
+#Write it out 
+data2<-as.data.frame(t(data2))
+names(data2) <- as.matrix(data2[1, ])
+data2 <- data2[-1, ]
+#you should remove the sample name from the CSV manually for consistancy
+write.csv(data2,"./Imputs/Cleaned_Complete_SMMART_BRCA.csv")
+```
+
+#-R-V fix
+```{r}
+names(data) <- as.matrix(data[1, ])
+data <- data[-1, ]
+colnames(data)[1] <- "Protein"
+
+data2<-data
+#Remove the tresh
+#NOTE
+#THIS GETS RID OF THE LAST 4 OF ALL COLUMNS 
+data2$Protein<-str_sub(data2$Protein,1,nchar(data2$Protein)-4)
+
+data2$Protein<-gsub("-", "", data2$Protein)
+```
+
